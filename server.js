@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 const cron = require('node-cron');
 const connectDB = async () => {
   const db = require('./config/db');
@@ -72,11 +73,19 @@ cron.schedule('0 2 * * 0', async () => {
 
 // --- Serve Frontend Client in Production ---
 if (process.env.NODE_ENV === 'production') {
-  app.use(express.static(path.join(__dirname, '../client/dist')));
+  const clientDistPath = path.join(__dirname, '../client/dist');
+  const indexPath = path.resolve(clientDistPath, 'index.html');
   
-  app.get('*', (req, res) => {
-    res.sendFile(path.resolve(__dirname, '../client', 'dist', 'index.html'));
-  });
+  if (fs.existsSync(indexPath)) {
+    app.use(express.static(clientDistPath));
+    app.get('*', (req, res) => {
+      res.sendFile(indexPath);
+    });
+  } else {
+    app.get('*', (req, res) => {
+      res.send('Khatabook Business Ledger API is running (Frontend build not found)...');
+    });
+  }
 } else {
   app.get('/', (req, res) => {
     res.send('Khatabook Business Ledger API is running...');
