@@ -161,6 +161,35 @@ exports.backupDatabase = async (req, res) => {
   }
 };
 
+// Delete user and all their associated data
+exports.deleteUser = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Prevent deleting own admin account
+    if (user._id.toString() === req.user.id.toString()) {
+      return res.status(400).json({ message: 'You cannot delete your own admin account' });
+    }
+
+    // Delete all related data for this user
+    await Customer.deleteMany({ userId: req.params.id });
+    await Transaction.deleteMany({ userId: req.params.id });
+    await Expense.deleteMany({ userId: req.params.id });
+    await Invoice.deleteMany({ userId: req.params.id });
+    await Subscription.deleteMany({ userId: req.params.id });
+
+    // Delete the user
+    await User.findByIdAndDelete(req.params.id);
+
+    res.json({ message: `Merchant account ${user.businessName} has been permanently deleted along with all associated data` });
+  } catch (error) {
+    res.status(500).json({ message: 'Error deleting user', error: error.message });
+  }
+};
+
 // Restore Database from file
 exports.restoreDatabase = async (req, res) => {
   try {
@@ -207,5 +236,48 @@ exports.restoreDatabase = async (req, res) => {
     res.json({ message: 'Database state restored successfully' });
   } catch (error) {
     res.status(500).json({ message: 'Database restore operation failed', error: error.message });
+  }
+};
+
+// Create new user (Admin functionality)
+exports.createUser = async (req, res) => {
+  try {
+    const { businessName, ownerName, phone, email, password, role, address } = req.body;
+    if (!businessName || !ownerName || !phone || !email || !password) {
+      return res.status(400).json({ message: 'All fields (Business Name, Owner Name, Phone, Email, Password) are required' });
+    }
+
+    // Check if user exists
+    const userExists = await User.findOne({ $or: [{ email }, { phone }] });
+    if (userExists) {
+      return res.status(400).json({ message: 'User with this email or phone already exists' });
+    }
+
+    const user = await User.create({
+      businessName,
+      ownerName,
+      phone,
+      email,
+      password,
+      role: role || 'user',
+      address: address || ''
+    });
+
+    res.status(201).json({
+      message: 'User created successfully',
+      user: {
+        id: user._id,
+        businessName: user.businessName,
+        ownerName: user.ownerName,
+        phone: user.phone,
+        email: user.email,
+        address: user.address,
+        role: user.role,
+        language: user.language,
+        subscription: user.subscription
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error creating user', error: error.message });
   }
 };

@@ -18,7 +18,7 @@ exports.getCustomers = async (req, res) => {
 // Add a new customer
 exports.addCustomer = async (req, res) => {
   try {
-    const { name, phone, email } = req.body;
+    const { name, phone, email, address, city, state, country, pincode, notes } = req.body;
     if (!name || !phone) {
       return res.status(400).json({ message: 'Customer name and phone number are required' });
     }
@@ -28,6 +28,12 @@ exports.addCustomer = async (req, res) => {
       name,
       phone,
       email: email || '',
+      address: address || '',
+      city: city || '',
+      state: state || '',
+      country: country || '',
+      pincode: pincode || '',
+      notes: notes || '',
       totalBalance: 0
     });
 
@@ -40,7 +46,7 @@ exports.addCustomer = async (req, res) => {
 // Edit customer details
 exports.updateCustomer = async (req, res) => {
   try {
-    const { name, phone, email } = req.body;
+    const { name, phone, email, address, city, state, country, pincode, notes } = req.body;
     const customer = await Customer.findOne({ _id: req.params.id, userId: req.user.id });
     
     if (!customer) {
@@ -50,6 +56,12 @@ exports.updateCustomer = async (req, res) => {
     if (name) customer.name = name;
     if (phone) customer.phone = phone;
     if (email !== undefined) customer.email = email;
+    if (address !== undefined) customer.address = address;
+    if (city !== undefined) customer.city = city;
+    if (state !== undefined) customer.state = state;
+    if (country !== undefined) customer.country = country;
+    if (pincode !== undefined) customer.pincode = pincode;
+    if (notes !== undefined) customer.notes = notes;
 
     await customer.save();
     res.json(customer);
@@ -230,5 +242,98 @@ exports.syncTransactions = async (req, res) => {
     res.json({ message: 'Sync operations complete', itemsSynced: results.length });
   } catch (error) {
     res.status(500).json({ message: 'Error syncing ledger', error: error.message });
+  }
+};
+
+// Get Dashboard Summary Analytics
+exports.getDashboardSummary = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // 1. Total Customers Count
+    const totalCustomers = await Customer.countDocuments({ userId });
+
+    // 2. Total Credit and Debit Calculations
+    const customers = await Customer.find({ userId });
+    let totalCredit = 0; // You will get (positive totalBalance)
+    let totalDebit = 0;  // You will give (negative totalBalance)
+    
+    customers.forEach(c => {
+      if (c.totalBalance > 0) {
+        totalCredit += c.totalBalance;
+      } else if (c.totalBalance < 0) {
+        totalDebit += Math.abs(c.totalBalance);
+      }
+    });
+
+    const netBalance = totalCredit - totalDebit;
+
+    // 3. Recent Customers (Last 5)
+    const recentCustomers = await Customer.find({ userId })
+      .sort({ createdAt: -1 })
+      .limit(5);
+
+    // 4. Recent Transactions (Last 5)
+    const recentTransactions = await Transaction.find({ userId })
+      .populate('customerId', 'name phone')
+      .sort({ date: -1, createdAt: -1 })
+      .limit(5);
+
+    // 5. Chart Data (Last 7 days aggregated)
+    const chartData = [];
+    const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const oneDay = 24 * 60 * 60 * 1000;
+    const now = new Date();
+
+    // Fetch transactions in last 7 days
+    const startDate = new Date();
+    startDate.setHours(0, 0, 0, 0);
+    startDate.setDate(startDate.getDate() - 6);
+
+    const txs = await Transaction.find({
+      userId,
+      date: { $gte: startDate }
+    });
+
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(now.getDate() - i);
+      const dayName = daysOfWeek[d.getDay()];
+
+      // Filter txs on this specific date
+      const dayTxs = txs.filter(t => {
+        const tDate = new Date(t.date);
+        return tDate.toDateString() === d.toDateString();
+      });
+
+      let cashIn = 0;  // got (credit)
+      let cashOut = 0; // give (debit)
+
+      dayTxs.forEach(t => {
+        if (t.type === 'got') {
+          cashIn += t.amount;
+        } else if (t.type === 'give') {
+          cashOut += t.amount;
+        }
+      });
+
+      chartData.push({
+        name: dayName,
+        CashIn: cashIn,
+        CashOut: cashOut
+      });
+    }
+
+    res.json({
+      totalCustomers,
+      totalCredit,
+      totalDebit,
+      netBalance,
+      recentCustomers,
+      recentTransactions,
+      chartData
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error generating dashboard summary', error: error.message });
   }
 };

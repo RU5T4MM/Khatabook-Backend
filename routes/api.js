@@ -53,12 +53,14 @@ router.post('/auth/login', authController.login);
 router.post('/auth/send-otp', authController.sendOtp);
 router.post('/auth/verify-otp', authController.verifyOtp);
 router.post('/auth/forgot-password', authController.forgotPassword);
+router.post('/auth/reset-password', authController.resetPassword);
 router.get('/auth/profile', auth, authController.getProfile);
 router.put('/auth/profile', auth, authController.updateProfile);
 
 // ==========================================
 // CUSTOMER ROUTES
 // ==========================================
+router.get('/dashboard/summary', auth, ledgerController.getDashboardSummary);
 router.get('/customers', auth, ledgerController.getCustomers);
 router.post('/customers', auth, ledgerController.addCustomer);
 router.put('/customers/:id', auth, ledgerController.updateCustomer);
@@ -99,8 +101,10 @@ router.post('/payments/verify', auth, paymentController.verifyPayment);
 // ==========================================
 router.get('/admin/analytics', auth, adminOnly, adminController.getAnalytics);
 router.get('/admin/users', auth, adminOnly, adminController.getUsers);
+router.post('/admin/users', auth, adminOnly, adminController.createUser);
 router.put('/admin/users/:id/block', auth, adminOnly, adminController.toggleUserBlock);
 router.put('/admin/users/:id/plan', auth, adminOnly, adminController.updateUserPlan);
+router.delete('/admin/users/:id', auth, adminOnly, adminController.deleteUser);
 router.post('/admin/backup', auth, adminOnly, adminController.backupDatabase);
 router.post('/admin/restore', auth, adminOnly, adminController.restoreDatabase);
 

@@ -5,7 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon --delay 1500ms server.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

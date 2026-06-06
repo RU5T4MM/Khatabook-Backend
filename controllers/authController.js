@@ -53,6 +53,7 @@ exports.signup = async (req, res) => {
         ownerName: user.ownerName,
         phone: user.phone,
         email: user.email,
+        address: user.address,
         role: user.role,
         language: user.language,
         subscription: user.subscription
@@ -91,6 +92,7 @@ exports.login = async (req, res) => {
         ownerName: user.ownerName,
         phone: user.phone,
         email: user.email,
+        address: user.address,
         role: user.role,
         language: user.language,
         subscription: user.subscription
@@ -206,6 +208,7 @@ exports.verifyOtp = async (req, res) => {
         ownerName: user.ownerName,
         phone: user.phone,
         email: user.email,
+        address: user.address,
         role: user.role,
         language: user.language,
         subscription: user.subscription
@@ -226,25 +229,55 @@ exports.forgotPassword = async (req, res) => {
       return res.status(404).json({ message: 'No user registered with this email' });
     }
 
-    // Generate random reset token (simulated)
-    const resetToken = Math.random().toString(36).slice(-8).toUpperCase();
+    // Generate random 6-digit reset token
+    const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
     
+    user.resetPasswordToken = resetCode;
+    user.resetPasswordExpires = Date.now() + 15 * 60 * 1000; // 15 mins expiry
+    await user.save();
+
     console.log(`\n========================================`);
     console.log(`[PASSWORD RESET SERVICE SIMULATOR]`);
     console.log(`Email Sent to: ${email}`);
-    console.log(`Temporary Reset Password Code: ${resetToken}`);
+    console.log(`Temporary Reset Password Code: ${resetCode}`);
     console.log(`========================================\n`);
 
-    // In a real application we would mail this. For ease of use:
-    user.password = resetToken; // update to temporary password (will be hashed automatically)
-    await user.save();
-
     res.json({ 
-      message: 'Temporary password sent to email (Simulated)',
-      tempPassword: resetToken // return it for testing convenience
+      message: 'Temporary reset password code sent to email (Simulated)',
+      resetCode // return it for testing convenience
     });
   } catch (error) {
     res.status(500).json({ message: 'Server error on forgot password request', error: error.message });
+  }
+};
+
+// Reset Password Confirm
+exports.resetPassword = async (req, res) => {
+  try {
+    const { email, code, newPassword } = req.body;
+    if (!email || !code || !newPassword) {
+      return res.status(400).json({ message: 'Email, code, and new password are required' });
+    }
+
+    const user = await User.findOne({ 
+      email, 
+      resetPasswordToken: code,
+      resetPasswordExpires: { $gt: Date.now() }
+    });
+
+    if (!user) {
+      return res.status(400).json({ message: 'Invalid or expired password reset code' });
+    }
+
+    // Set new password (will be hashed by User pre-save hook)
+    user.password = newPassword;
+    user.resetPasswordToken = null;
+    user.resetPasswordExpires = null;
+    await user.save();
+
+    res.json({ message: 'Password has been reset successfully' });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error resetting password', error: error.message });
   }
 };
 
@@ -261,7 +294,7 @@ exports.getProfile = async (req, res) => {
 // Update profile & language
 exports.updateProfile = async (req, res) => {
   try {
-    const { businessName, ownerName, language, email, phone } = req.body;
+    const { businessName, ownerName, language, email, phone, address } = req.body;
     const user = await User.findById(req.user.id);
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
@@ -272,6 +305,7 @@ exports.updateProfile = async (req, res) => {
     if (language) user.language = language;
     if (email) user.email = email;
     if (phone) user.phone = phone;
+    if (address !== undefined) user.address = address;
 
     await user.save();
 
@@ -283,6 +317,7 @@ exports.updateProfile = async (req, res) => {
         ownerName: user.ownerName,
         phone: user.phone,
         email: user.email,
+        address: user.address,
         role: user.role,
         language: user.language,
         subscription: user.subscription

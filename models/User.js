@@ -43,6 +43,18 @@ const UserSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  address: {
+    type: String,
+    default: ''
+  },
+  resetPasswordToken: {
+    type: String,
+    default: null
+  },
+  resetPasswordExpires: {
+    type: Date,
+    default: null
+  },
   subscription: {
     plan: {
       type: String,

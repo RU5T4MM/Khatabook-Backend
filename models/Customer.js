@@ -22,6 +22,36 @@ const CustomerSchema = new mongoose.Schema({
     trim: true,
     default: ''
   },
+  address: {
+    type: String,
+    trim: true,
+    default: ''
+  },
+  city: {
+    type: String,
+    trim: true,
+    default: ''
+  },
+  state: {
+    type: String,
+    trim: true,
+    default: ''
+  },
+  country: {
+    type: String,
+    trim: true,
+    default: ''
+  },
+  pincode: {
+    type: String,
+    trim: true,
+    default: ''
+  },
+  notes: {
+    type: String,
+    trim: true,
+    default: ''
+  },
   totalBalance: {
     type: Number,
     default: 0 // positive: customer owes merchant (Udhaar), negative: merchant owes customer (Advance)
