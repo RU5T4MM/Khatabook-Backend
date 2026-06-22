@@ -182,6 +182,59 @@ exports.deleteTransaction = async (req, res) => {
   }
 };
 
+// Edit transaction details (and recalculate customer balance)
+exports.updateTransaction = async (req, res) => {
+  try {
+    const { amount, description, date, type } = req.body;
+    const transaction = await Transaction.findOne({ _id: req.params.id, userId: req.user.id });
+    
+    if (!transaction) {
+      return res.status(404).json({ message: 'Transaction entry not found' });
+    }
+
+    const customer = await Customer.findOne({ _id: transaction.customerId, userId: req.user.id });
+    if (!customer) {
+      return res.status(404).json({ message: 'Customer not found' });
+    }
+
+    // 1. Reverse the effect of the old transaction amount & type on the customer balance
+    // If the old type was 'give', we subtract it. If it was 'got', we add it back.
+    const oldFactor = transaction.type === 'give' ? -1 : 1;
+    customer.totalBalance += oldFactor * transaction.amount;
+
+    // 2. Handle receipt file upload if a new one is sent
+    if (req.file) {
+      // Delete old receipt image if it exists
+      if (transaction.billImage) {
+        const filePath = path.join(__dirname, '..', transaction.billImage);
+        fs.unlink(filePath, (err) => {
+          if (err) console.error('Failed to delete old transaction receipt file:', err.message);
+        });
+      }
+      transaction.billImage = `/uploads/${req.file.filename}`;
+    }
+
+    // 3. Apply new values to transaction
+    if (amount !== undefined) transaction.amount = parseFloat(amount);
+    if (description !== undefined) transaction.description = description;
+    if (date !== undefined) transaction.date = date ? new Date(date) : transaction.date;
+    if (type !== undefined) transaction.type = type;
+
+    await transaction.save();
+
+    // 4. Apply the effect of the new transaction amount & type to the customer balance
+    // If the new type is 'give', we add it. If it is 'got', we subtract it.
+    const newFactor = transaction.type === 'give' ? 1 : -1;
+    customer.totalBalance += newFactor * transaction.amount;
+    await customer.save();
+
+    res.json({ transaction, customerBalance: customer.totalBalance });
+  } catch (error) {
+    res.status(500).json({ message: 'Error updating transaction', error: error.message });
+  }
+};
+
+
 // Sync multiple offline transactions
 exports.syncTransactions = async (req, res) => {
   try {

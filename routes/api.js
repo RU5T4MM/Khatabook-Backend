@@ -71,6 +71,7 @@ router.delete('/customers/:id', auth, ledgerController.deleteCustomer);
 // ==========================================
 router.get('/ledger/customer/:customerId', auth, ledgerController.getTransactionsByCustomer);
 router.post('/ledger', auth, upload.single('billImage'), ledgerController.addTransaction);
+router.put('/ledger/:id', auth, upload.single('billImage'), ledgerController.updateTransaction);
 router.delete('/ledger/:id', auth, ledgerController.deleteTransaction);
 router.post('/ledger/sync', auth, ledgerController.syncTransactions);
 
