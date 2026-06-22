@@ -1,5 +1,6 @@
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
+const nodemailer = require('nodemailer');
 
 // In-memory cache for OTP codes (phone -> { otp, expires })
 const otpCache = new Map();
@@ -236,15 +237,48 @@ exports.forgotPassword = async (req, res) => {
     user.resetPasswordExpires = Date.now() + 15 * 60 * 1000; // 15 mins expiry
     await user.save();
 
+    // Send actual email using nodemailer
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+      }
+    });
+
+    const mailOptions = {
+      from: `"Nahid Group Ledger" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject: 'Password Reset Verification Code - Nahid Group Ledger',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
+          <h2 style="color: #059669; text-align: center;">Nahid Group Ledger</h2>
+          <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
+          <p>Hello,</p>
+          <p>We received a request to reset the password for your Nahid Group Ledger account.</p>
+          <p>Please use the following 6-digit verification code to reset your password. This code will expire in 15 minutes.</p>
+          <div style="text-align: center; margin: 30px 0;">
+            <span style="font-size: 24px; font-weight: bold; letter-spacing: 4px; padding: 10px 20px; background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 4px; color: #15803d;">
+              ${resetCode}
+            </span>
+          </div>
+          <p>If you did not request a password reset, please ignore this email or contact support if you have concerns.</p>
+          <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
+          <p style="font-size: 12px; color: #64748b; text-align: center;">© 2026 Nahid Group Ledger. All rights reserved.</p>
+        </div>
+      `
+    };
+
+    await transporter.sendMail(mailOptions);
+
     console.log(`\n========================================`);
-    console.log(`[PASSWORD RESET SERVICE SIMULATOR]`);
+    console.log(`[PASSWORD RESET EMAIL SENT]`);
     console.log(`Email Sent to: ${email}`);
     console.log(`Temporary Reset Password Code: ${resetCode}`);
     console.log(`========================================\n`);
 
     res.json({ 
-      message: 'Temporary reset password code sent to email (Simulated)',
-      resetCode // return it for testing convenience
+      message: 'Temporary reset password code has been sent to your email.'
     });
   } catch (error) {
     res.status(500).json({ message: 'Server error on forgot password request', error: error.message });
