@@ -245,16 +245,21 @@ exports.forgotPassword = async (req, res) => {
     user.resetPasswordExpires = Date.now() + 15 * 60 * 1000; // 15 mins expiry
     await user.save();
 
-    // Send actual email using nodemailer with short timeouts (8 seconds) to prevent infinite hanging
+    // Send actual email using nodemailer with short timeouts to prevent infinite hanging
     const transporter = nodemailer.createTransport({
-      service: 'gmail',
+      host: 'smtp.gmail.com',
+      port: 587,
+      secure: false, // true for 465, false for other ports
       auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS
       },
-      connectionTimeout: 8000,
-      greetingTimeout: 8000,
-      socketTimeout: 10000
+      tls: {
+        rejectUnauthorized: false // Bypasses SSL certificate mismatch checks in cloud environments
+      },
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 15000
     });
 
     const mailOptions = {
