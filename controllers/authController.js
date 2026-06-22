@@ -230,6 +230,14 @@ exports.forgotPassword = async (req, res) => {
       return res.status(404).json({ message: 'No user registered with this email' });
     }
 
+    // Check if email configuration is present in environment
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+      console.error('EMAIL_USER or EMAIL_PASS environment variables are missing');
+      return res.status(500).json({ 
+        message: 'Email service configuration (EMAIL_USER and EMAIL_PASS) is missing on the server environment. Please configure them in your production hosting panel.' 
+      });
+    }
+
     // Generate random 6-digit reset token
     const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
     
@@ -237,13 +245,16 @@ exports.forgotPassword = async (req, res) => {
     user.resetPasswordExpires = Date.now() + 15 * 60 * 1000; // 15 mins expiry
     await user.save();
 
-    // Send actual email using nodemailer
+    // Send actual email using nodemailer with short timeouts (8 seconds) to prevent infinite hanging
     const transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS
-      }
+      },
+      connectionTimeout: 8000,
+      greetingTimeout: 8000,
+      socketTimeout: 10000
     });
 
     const mailOptions = {
@@ -281,7 +292,11 @@ exports.forgotPassword = async (req, res) => {
       message: 'Temporary reset password code has been sent to your email.'
     });
   } catch (error) {
-    res.status(500).json({ message: 'Server error on forgot password request', error: error.message });
+    console.error('Nodemailer error details:', error);
+    res.status(500).json({ 
+      message: 'Failed to send reset email. Verify your server allows SMTP outbound traffic and SMTP variables are correct.',
+      error: error.message 
+    });
   }
 };
 
