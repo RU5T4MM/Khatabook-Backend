@@ -230,14 +230,6 @@ exports.forgotPassword = async (req, res) => {
       return res.status(404).json({ message: 'No user registered with this email' });
     }
 
-    // Check if email configuration is present in environment
-    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-      console.error('EMAIL_USER or EMAIL_PASS environment variables are missing');
-      return res.status(500).json({ 
-        message: 'Email service configuration (EMAIL_USER and EMAIL_PASS) is missing on the server environment. Please configure them in your production hosting panel.' 
-      });
-    }
-
     // Generate random 6-digit reset token
     const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
     
@@ -245,47 +237,82 @@ exports.forgotPassword = async (req, res) => {
     user.resetPasswordExpires = Date.now() + 15 * 60 * 1000; // 15 mins expiry
     await user.save();
 
-    // Send actual email using nodemailer with short timeouts to prevent infinite hanging
-    const transporter = nodemailer.createTransport({
-      host: process.env.EMAIL_HOST || 'smtp.gmail.com',
-      port: parseInt(process.env.EMAIL_PORT || '465'),
-      secure: process.env.EMAIL_SECURE ? (process.env.EMAIL_SECURE === 'true') : true, // default to true for port 465
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS
-      },
-      tls: {
-        rejectUnauthorized: false // Bypasses SSL certificate mismatch checks in cloud environments
-      },
-      connectionTimeout: 10000,
-      greetingTimeout: 10000,
-      socketTimeout: 15000
-    });
-
-    const mailOptions = {
-      from: `"Nahid Group Ledger" <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject: 'Password Reset Verification Code - Nahid Group Ledger',
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
-          <h2 style="color: #059669; text-align: center;">Nahid Group Ledger</h2>
-          <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
-          <p>Hello,</p>
-          <p>We received a request to reset the password for your Nahid Group Ledger account.</p>
-          <p>Please use the following 6-digit verification code to reset your password. This code will expire in 15 minutes.</p>
-          <div style="text-align: center; margin: 30px 0;">
-            <span style="font-size: 24px; font-weight: bold; letter-spacing: 4px; padding: 10px 20px; background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 4px; color: #15803d;">
-              ${resetCode}
-            </span>
-          </div>
-          <p>If you did not request a password reset, please ignore this email or contact support if you have concerns.</p>
-          <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
-          <p style="font-size: 12px; color: #64748b; text-align: center;">© 2026 Nahid Group Ledger. All rights reserved.</p>
+    const resetHtml = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
+        <h2 style="color: #059669; text-align: center;">Nahid Group Ledger</h2>
+        <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
+        <p>Hello,</p>
+        <p>We received a request to reset the password for your Nahid Group Ledger account.</p>
+        <p>Please use the following 6-digit verification code to reset your password. This code will expire in 15 minutes.</p>
+        <div style="text-align: center; margin: 30px 0;">
+          <span style="font-size: 24px; font-weight: bold; letter-spacing: 4px; padding: 10px 20px; background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 4px; color: #15803d;">
+            ${resetCode}
+          </span>
         </div>
-      `
-    };
+        <p>If you did not request a password reset, please ignore this email or contact support if you have concerns.</p>
+        <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
+        <p style="font-size: 12px; color: #64748b; text-align: center;">© 2026 Nahid Group Ledger. All rights reserved.</p>
+      </div>
+    `;
 
-    await transporter.sendMail(mailOptions);
+    // Support both Resend HTTP API (recommended for hosting providers like Render) and SMTP fallback
+    if (process.env.RESEND_API_KEY) {
+      console.log('[EMAIL] Sending reset password email via Resend API...');
+      const response = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.RESEND_API_KEY}`
+        },
+        body: JSON.stringify({
+          from: process.env.EMAIL_FROM || `"Nahid Group Ledger" <onboarding@resend.dev>`,
+          to: email,
+          subject: 'Password Reset Verification Code - Nahid Group Ledger',
+          html: resetHtml
+        })
+      });
+
+      const resData = await response.json();
+      if (!response.ok) {
+        throw new Error(resData.message || JSON.stringify(resData));
+      }
+      console.log('[EMAIL] Resend API Response:', resData);
+    } else {
+      console.log('[EMAIL] Sending reset password email via Nodemailer SMTP...');
+      
+      // Check if email configuration is present in environment
+      if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+        console.error('EMAIL_USER or EMAIL_PASS environment variables are missing');
+        return res.status(500).json({ 
+          message: 'Email service configuration (EMAIL_USER and EMAIL_PASS) is missing on the server environment. Please configure them in your production hosting panel.' 
+        });
+      }
+
+      const transporter = nodemailer.createTransport({
+        host: process.env.EMAIL_HOST || 'smtp.gmail.com',
+        port: parseInt(process.env.EMAIL_PORT || '465'),
+        secure: process.env.EMAIL_SECURE ? (process.env.EMAIL_SECURE === 'true') : true, // default to true for port 465
+        auth: {
+          user: process.env.EMAIL_USER,
+          pass: process.env.EMAIL_PASS
+        },
+        tls: {
+          rejectUnauthorized: false // Bypasses SSL certificate mismatch checks in cloud environments
+        },
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 15000
+      });
+
+      const mailOptions = {
+        from: `"Nahid Group Ledger" <${process.env.EMAIL_USER}>`,
+        to: email,
+        subject: 'Password Reset Verification Code - Nahid Group Ledger',
+        html: resetHtml
+      };
+
+      await transporter.sendMail(mailOptions);
+    }
 
     console.log(`\n========================================`);
     console.log(`[PASSWORD RESET EMAIL SENT]`);
@@ -297,7 +324,7 @@ exports.forgotPassword = async (req, res) => {
       message: 'Temporary reset password code has been sent to your email.'
     });
   } catch (error) {
-    console.error('Nodemailer error details:', error);
+    console.error('Email sending error details:', error);
     res.status(500).json({ 
       message: 'Failed to send reset email. Verify your server allows SMTP outbound traffic and SMTP variables are correct.',
       error: error.message 
