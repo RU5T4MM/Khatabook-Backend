@@ -255,8 +255,32 @@ exports.forgotPassword = async (req, res) => {
       </div>
     `;
 
-    // Support both Resend HTTP API (recommended for hosting providers like Render) and SMTP fallback
-    if (process.env.RESEND_API_KEY) {
+    // Support Brevo API, Resend HTTP API (recommended for hosting providers like Render), and SMTP fallback
+    if (process.env.BREVO_API_KEY) {
+      console.log('[EMAIL] Sending reset password email via Brevo API...');
+      const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'api-key': process.env.BREVO_API_KEY
+        },
+        body: JSON.stringify({
+          sender: { 
+            name: "Nahid Group Ledger", 
+            email: process.env.EMAIL_USER || "arshadali892296@gmail.com" 
+          },
+          to: [{ email: email }],
+          subject: 'Password Reset Verification Code - Nahid Group Ledger',
+          htmlContent: resetHtml
+        })
+      });
+
+      const resData = await response.json();
+      if (!response.ok) {
+        throw new Error(resData.message || JSON.stringify(resData));
+      }
+      console.log('[EMAIL] Brevo API Response:', resData);
+    } else if (process.env.RESEND_API_KEY) {
       console.log('[EMAIL] Sending reset password email via Resend API...');
       const response = await fetch('https://api.resend.com/emails', {
         method: 'POST',
@@ -325,11 +349,12 @@ exports.forgotPassword = async (req, res) => {
     });
   } catch (error) {
     console.error('Email sending error details:', error);
-    const isResend = !!process.env.RESEND_API_KEY;
+    let service = 'SMTP';
+    if (process.env.BREVO_API_KEY) service = 'Brevo API';
+    else if (process.env.RESEND_API_KEY) service = 'Resend API';
+    
     res.status(500).json({ 
-      message: isResend 
-        ? `Failed to send reset email via Resend API: ${error.message}`
-        : `Failed to send reset email via SMTP: ${error.message}. Verify your server allows SMTP outbound traffic and SMTP variables are correct.`,
+      message: `Failed to send reset email via ${service}: ${error.message}`,
       error: error.message 
     });
   }
