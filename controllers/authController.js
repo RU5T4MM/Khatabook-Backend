@@ -280,73 +280,61 @@ exports.forgotPassword = async (req, res) => {
         throw new Error(resData.message || JSON.stringify(resData));
       }
       console.log('[EMAIL] Brevo API Response:', resData);
-    } else if (process.env.RESEND_API_KEY) {
+    } else if (process.env.RESEND_API_KEY && process.env.EMAIL_FROM && !/@resend\.dev/i.test(process.env.EMAIL_FROM)) {
       console.log('[EMAIL] Sending reset password email via Resend API...');
-      const resendFrom = process.env.EMAIL_FROM;
-      const hasValidResendFrom = resendFrom && !/@resend\.dev/i.test(resendFrom);
-
-      if (!hasValidResendFrom) {
-        console.warn('[EMAIL] Invalid or missing EMAIL_FROM for Resend API. Falling back to SMTP if available.');
-        if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-          throw new Error('EMAIL_FROM must be set to a verified sender address for Resend API; do not use onboarding@resend.dev for production email sending.');
-        }
-      }
-
-      if (hasValidResendFrom) {
-        const response = await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${process.env.RESEND_API_KEY}`
-          },
-          body: JSON.stringify({
-            from: resendFrom,
-            to: email,
-            subject: 'Password Reset Verification Code - Nahid Group Ledger',
-            html: resetHtml
-          })
-        });
-
-        const resData = await response.json();
-        if (!response.ok) {
-          throw new Error(resData.message || JSON.stringify(resData));
-        }
-        console.log('[EMAIL] Resend API Response:', resData);
-      } else {
-        console.log('[EMAIL] Falling back to Nodemailer SMTP because Resend sender is not configured correctly.');
-
-        if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-          console.error('EMAIL_USER or EMAIL_PASS environment variables are missing for SMTP fallback');
-          return res.status(500).json({ 
-            message: 'Email service configuration is missing: either set a verified EMAIL_FROM for Resend API or configure SMTP with EMAIL_USER and EMAIL_PASS.' 
-          });
-        }
-
-        const transporter = nodemailer.createTransport({
-          host: process.env.EMAIL_HOST || 'smtp.gmail.com',
-          port: parseInt(process.env.EMAIL_PORT || '465'),
-          secure: process.env.EMAIL_SECURE ? (process.env.EMAIL_SECURE === 'true') : true,
-          auth: {
-            user: process.env.EMAIL_USER,
-            pass: process.env.EMAIL_PASS
-          },
-          tls: {
-            rejectUnauthorized: false
-          },
-          connectionTimeout: 10000,
-          greetingTimeout: 10000,
-          socketTimeout: 15000
-        });
-
-        const mailOptions = {
-          from: `"Nahid Group Ledger" <${process.env.EMAIL_USER}>`,
+      const response = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.RESEND_API_KEY}`
+        },
+        body: JSON.stringify({
+          from: process.env.EMAIL_FROM,
           to: email,
           subject: 'Password Reset Verification Code - Nahid Group Ledger',
           html: resetHtml
-        };
+        })
+      });
 
-        await transporter.sendMail(mailOptions);
+      const resData = await response.json();
+      if (!response.ok) {
+        throw new Error(resData.message || JSON.stringify(resData));
       }
+      console.log('[EMAIL] Resend API Response:', resData);
+    } else if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+      console.log('[EMAIL] Sending reset password email via Nodemailer SMTP...');
+
+      const smtpPort = parseInt(process.env.EMAIL_PORT || '587', 10);
+      const secure = typeof process.env.EMAIL_SECURE !== 'undefined'
+        ? process.env.EMAIL_SECURE === 'true'
+        : smtpPort === 465;
+
+      const transporter = nodemailer.createTransport({
+        host: process.env.EMAIL_HOST || 'smtp.gmail.com',
+        port: smtpPort,
+        secure,
+        auth: {
+          user: process.env.EMAIL_USER,
+          pass: process.env.EMAIL_PASS
+        },
+        tls: {
+          rejectUnauthorized: false // Bypasses SSL certificate mismatch checks in cloud environments
+        },
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 15000
+      });
+
+      const mailOptions = {
+        from: `"Nahid Group Ledger" <${process.env.EMAIL_USER}>`,
+        to: email,
+        subject: 'Password Reset Verification Code - Nahid Group Ledger',
+        html: resetHtml
+      };
+
+      await transporter.sendMail(mailOptions);
+    } else if (process.env.RESEND_API_KEY) {
+      throw new Error('Resend API is enabled but EMAIL_FROM is missing or invalid for Resend. Set EMAIL_FROM to a verified sender under your Resend domain, or remove RESEND_API_KEY to use SMTP.');
     } else {
       console.log('[EMAIL] Sending reset password email via Nodemailer SMTP...');
       
