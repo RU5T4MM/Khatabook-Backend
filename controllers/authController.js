@@ -247,9 +247,9 @@ exports.forgotPassword = async (req, res) => {
 
     // Send actual email using nodemailer with short timeouts to prevent infinite hanging
     const transporter = nodemailer.createTransport({
-      host: 'smtp.gmail.com',
-      port: 587,
-      secure: false, // true for 465, false for other ports
+      host: process.env.EMAIL_HOST || 'smtp.gmail.com',
+      port: parseInt(process.env.EMAIL_PORT || '587'),
+      secure: process.env.EMAIL_SECURE ? (process.env.EMAIL_SECURE === 'true') : false, // true for 465, false for other ports
       auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS
