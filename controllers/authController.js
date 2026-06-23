@@ -325,8 +325,11 @@ exports.forgotPassword = async (req, res) => {
     });
   } catch (error) {
     console.error('Email sending error details:', error);
+    const isResend = !!process.env.RESEND_API_KEY;
     res.status(500).json({ 
-      message: 'Failed to send reset email. Verify your server allows SMTP outbound traffic and SMTP variables are correct.',
+      message: isResend 
+        ? `Failed to send reset email via Resend API: ${error.message}`
+        : `Failed to send reset email via SMTP: ${error.message}. Verify your server allows SMTP outbound traffic and SMTP variables are correct.`,
       error: error.message 
     });
   }
