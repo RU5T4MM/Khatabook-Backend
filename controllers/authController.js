@@ -267,135 +267,132 @@ exports.forgotPassword = async (req, res) => {
     `;
 
     let emailService = 'SMTP';
+    let emailError = null;
 
-    // Support Brevo API, Resend HTTP API (recommended for hosting providers like Render), and SMTP fallback
-    if (process.env.BREVO_API_KEY) {
-      emailService = 'Brevo API';
-      console.log('[EMAIL] Sending reset password email via Brevo API...');
-      const response = await fetch('https://api.brevo.com/v3/smtp/email', {
-        method: 'POST',
-        agent: new https.Agent({ family: 4 }),
-        headers: {
-          'Content-Type': 'application/json',
-          'api-key': process.env.BREVO_API_KEY
-        },
-        body: JSON.stringify({
-          sender: { 
-            name: "Nahid Group Ledger", 
-            email: process.env.EMAIL_USER || "arshadali892296@gmail.com" 
+    // Priority: SMTP (most stable on Render) → Resend API → Brevo API
+    // Try SMTP first
+    if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+      try {
+        emailService = 'SMTP';
+        console.log('[EMAIL] Attempting to send via Nodemailer SMTP...');
+
+        const smtpPort = parseInt(process.env.EMAIL_PORT || '587', 10);
+        const secure = typeof process.env.EMAIL_SECURE !== 'undefined'
+          ? process.env.EMAIL_SECURE === 'true'
+          : smtpPort === 465;
+
+        const transporter = nodemailer.createTransport({
+          host: process.env.EMAIL_HOST || 'smtp.gmail.com',
+          port: smtpPort,
+          secure,
+          family: 4,
+          auth: {
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASS
           },
-          to: [{ email: email }],
-          subject: 'Password Reset Verification Code - Nahid Group Ledger',
-          htmlContent: resetHtml
-        })
-      });
+          tls: {
+            rejectUnauthorized: false
+          },
+          connectionTimeout: 10000,
+          greetingTimeout: 10000,
+          socketTimeout: 15000
+        });
 
-      const resData = await parseJsonSafe(response);
-      if (!response.ok) {
-        const errorMessage = resData && typeof resData === 'object'
-          ? resData.message || JSON.stringify(resData)
-          : resData || response.statusText;
-        throw new Error(errorMessage);
-      }
-      console.log('[EMAIL] Brevo API Response:', resData);
-    } else if (process.env.RESEND_API_KEY && process.env.EMAIL_FROM) {
-      emailService = 'Resend API';
-      console.log('[EMAIL] Sending reset password email via Resend API...');
-      const response = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        agent: new https.Agent({ family: 4 }),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.RESEND_API_KEY}`
-        },
-        body: JSON.stringify({
-          from: process.env.EMAIL_FROM,
+        const mailOptions = {
+          from: `"Nahid Group Ledger" <${process.env.EMAIL_USER}>`,
           to: email,
           subject: 'Password Reset Verification Code - Nahid Group Ledger',
           html: resetHtml
-        })
-      });
+        };
 
-      const resData = await parseJsonSafe(response);
-      if (!response.ok) {
-        const errorMessage = resData && typeof resData === 'object'
-          ? resData.message || JSON.stringify(resData)
-          : resData || response.statusText;
-        throw new Error(errorMessage);
+        await transporter.sendMail(mailOptions);
+        console.log('[EMAIL] Password reset email sent successfully via SMTP');
+      } catch (smtpError) {
+        console.error('[EMAIL] SMTP failed:', smtpError.message);
+        emailError = smtpError;
+        // Fall through to try Resend
       }
-      console.log('[EMAIL] Resend API Response:', resData);
-    } else if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
-      emailService = 'SMTP';
-      console.log('[EMAIL] Sending reset password email via Nodemailer SMTP...');
+    }
 
-      const smtpPort = parseInt(process.env.EMAIL_PORT || '587', 10);
-      const secure = typeof process.env.EMAIL_SECURE !== 'undefined'
-        ? process.env.EMAIL_SECURE === 'true'
-        : smtpPort === 465;
-
-      const transporter = nodemailer.createTransport({
-        host: process.env.EMAIL_HOST || 'smtp.gmail.com',
-        port: smtpPort,
-        secure,
-        family: 4,
-        auth: {
-          user: process.env.EMAIL_USER,
-          pass: process.env.EMAIL_PASS
-        },
-        tls: {
-          rejectUnauthorized: false // Bypasses SSL certificate mismatch checks in cloud environments
-        },
-        connectionTimeout: 10000,
-        greetingTimeout: 10000,
-        socketTimeout: 15000
-      });
-
-      const mailOptions = {
-        from: `"Nahid Group Ledger" <${process.env.EMAIL_USER}>`,
-        to: email,
-        subject: 'Password Reset Verification Code - Nahid Group Ledger',
-        html: resetHtml
-      };
-
-      await transporter.sendMail(mailOptions);
-    } else if (process.env.RESEND_API_KEY) {
-      throw new Error('Resend API is enabled but EMAIL_FROM is missing or invalid for Resend. Set EMAIL_FROM to a verified sender under your Resend domain, or remove RESEND_API_KEY to use SMTP.');
-    } else {
-      console.log('[EMAIL] Sending reset password email via Nodemailer SMTP...');
-      
-      // Check if email configuration is present in environment
-      if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-        console.error('EMAIL_USER or EMAIL_PASS environment variables are missing');
-        return res.status(500).json({ 
-          message: 'Email service configuration (EMAIL_USER and EMAIL_PASS) is missing on the server environment. Please configure them in your production hosting panel.' 
+    // If SMTP failed or not configured, try Resend
+    if (emailError && process.env.RESEND_API_KEY && process.env.EMAIL_FROM) {
+      try {
+        emailService = 'Resend API (fallback)';
+        console.log('[EMAIL] SMTP failed, attempting Resend API...');
+        const response = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          agent: new https.Agent({ family: 4 }),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${process.env.RESEND_API_KEY}`
+          },
+          body: JSON.stringify({
+            from: process.env.EMAIL_FROM,
+            to: email,
+            subject: 'Password Reset Verification Code - Nahid Group Ledger',
+            html: resetHtml
+          })
         });
+
+        const resData = await parseJsonSafe(response);
+        if (!response.ok) {
+          const errorMessage = resData && typeof resData === 'object'
+            ? resData.message || JSON.stringify(resData)
+            : resData || response.statusText;
+          throw new Error(errorMessage);
+        }
+        console.log('[EMAIL] Password reset email sent successfully via Resend API');
+        emailError = null; // Success
+      } catch (resendError) {
+        console.error('[EMAIL] Resend API failed:', resendError.message);
+        emailError = resendError;
       }
+    } else if (!emailError) {
+      // SMTP succeeded, no need to try other services
+      emailError = null;
+    }
 
-      const transporter = nodemailer.createTransport({
-        host: process.env.EMAIL_HOST || 'smtp.gmail.com',
-        port: parseInt(process.env.EMAIL_PORT || '465'),
-        secure: process.env.EMAIL_SECURE ? (process.env.EMAIL_SECURE === 'true') : true, // default to true for port 465
-        family: 4,
-        auth: {
-          user: process.env.EMAIL_USER,
-          pass: process.env.EMAIL_PASS
-        },
-        tls: {
-          rejectUnauthorized: false // Bypasses SSL certificate mismatch checks in cloud environments
-        },
-        connectionTimeout: 10000,
-        greetingTimeout: 10000,
-        socketTimeout: 15000
-      });
+    // If both SMTP and Resend failed, try Brevo
+    if (emailError && process.env.BREVO_API_KEY) {
+      try {
+        emailService = 'Brevo API (fallback)';
+        console.log('[EMAIL] Previous methods failed, attempting Brevo API...');
+        const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+          method: 'POST',
+          agent: new https.Agent({ family: 4 }),
+          headers: {
+            'Content-Type': 'application/json',
+            'api-key': process.env.BREVO_API_KEY
+          },
+          body: JSON.stringify({
+            sender: { 
+              name: "Nahid Group Ledger", 
+              email: process.env.EMAIL_USER || "arshadali892296@gmail.com" 
+            },
+            to: [{ email: email }],
+            subject: 'Password Reset Verification Code - Nahid Group Ledger',
+            htmlContent: resetHtml
+          })
+        });
 
-      const mailOptions = {
-        from: `"Nahid Group Ledger" <${process.env.EMAIL_USER}>`,
-        to: email,
-        subject: 'Password Reset Verification Code - Nahid Group Ledger',
-        html: resetHtml
-      };
+        const resData = await parseJsonSafe(response);
+        if (!response.ok) {
+          const errorMessage = resData && typeof resData === 'object'
+            ? resData.message || JSON.stringify(resData)
+            : resData || response.statusText;
+          throw new Error(errorMessage);
+        }
+        console.log('[EMAIL] Password reset email sent successfully via Brevo API');
+        emailError = null; // Success
+      } catch (brevoError) {
+        console.error('[EMAIL] Brevo API failed:', brevoError.message);
+        emailError = brevoError;
+      }
+    }
 
-      await transporter.sendMail(mailOptions);
+    // If all services failed, throw the last error
+    if (emailError) {
+      throw emailError;
     }
 
     console.log(`\n========================================`);
