@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
+const https = require('https');
 
 // In-memory cache for OTP codes (phone -> { otp, expires })
 const otpCache = new Map();
@@ -255,11 +256,15 @@ exports.forgotPassword = async (req, res) => {
       </div>
     `;
 
+    let emailService = 'SMTP';
+
     // Support Brevo API, Resend HTTP API (recommended for hosting providers like Render), and SMTP fallback
     if (process.env.BREVO_API_KEY) {
+      emailService = 'Brevo API';
       console.log('[EMAIL] Sending reset password email via Brevo API...');
       const response = await fetch('https://api.brevo.com/v3/smtp/email', {
         method: 'POST',
+        agent: new https.Agent({ family: 4 }),
         headers: {
           'Content-Type': 'application/json',
           'api-key': process.env.BREVO_API_KEY
@@ -280,10 +285,12 @@ exports.forgotPassword = async (req, res) => {
         throw new Error(resData.message || JSON.stringify(resData));
       }
       console.log('[EMAIL] Brevo API Response:', resData);
-    } else if (process.env.RESEND_API_KEY && process.env.EMAIL_FROM && !/@resend\.dev/i.test(process.env.EMAIL_FROM)) {
+    } else if (process.env.RESEND_API_KEY && process.env.EMAIL_FROM) {
+      emailService = 'Resend API';
       console.log('[EMAIL] Sending reset password email via Resend API...');
       const response = await fetch('https://api.resend.com/emails', {
         method: 'POST',
+        agent: new https.Agent({ family: 4 }),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${process.env.RESEND_API_KEY}`
@@ -302,6 +309,7 @@ exports.forgotPassword = async (req, res) => {
       }
       console.log('[EMAIL] Resend API Response:', resData);
     } else if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+      emailService = 'SMTP';
       console.log('[EMAIL] Sending reset password email via Nodemailer SMTP...');
 
       const smtpPort = parseInt(process.env.EMAIL_PORT || '587', 10);
@@ -313,6 +321,7 @@ exports.forgotPassword = async (req, res) => {
         host: process.env.EMAIL_HOST || 'smtp.gmail.com',
         port: smtpPort,
         secure,
+        family: 4,
         auth: {
           user: process.env.EMAIL_USER,
           pass: process.env.EMAIL_PASS
@@ -350,6 +359,7 @@ exports.forgotPassword = async (req, res) => {
         host: process.env.EMAIL_HOST || 'smtp.gmail.com',
         port: parseInt(process.env.EMAIL_PORT || '465'),
         secure: process.env.EMAIL_SECURE ? (process.env.EMAIL_SECURE === 'true') : true, // default to true for port 465
+        family: 4,
         auth: {
           user: process.env.EMAIL_USER,
           pass: process.env.EMAIL_PASS
@@ -383,12 +393,8 @@ exports.forgotPassword = async (req, res) => {
     });
   } catch (error) {
     console.error('Email sending error details:', error);
-    let service = 'SMTP';
-    if (process.env.BREVO_API_KEY) service = 'Brevo API';
-    else if (process.env.RESEND_API_KEY) service = 'Resend API';
-    
     res.status(500).json({ 
-      message: `Failed to send reset email via ${service}: ${error.message}`,
+      message: `Failed to send reset email via ${emailService}: ${error.message}`,
       error: error.message 
     });
   }
