@@ -6,6 +6,16 @@ const https = require('https');
 // In-memory cache for OTP codes (phone -> { otp, expires })
 const otpCache = new Map();
 
+const parseJsonSafe = async (response) => {
+  const text = await response.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+};
+
 // Helper to generate JWT
 const generateToken = (user) => {
   return jwt.sign(
@@ -280,9 +290,12 @@ exports.forgotPassword = async (req, res) => {
         })
       });
 
-      const resData = await response.json();
+      const resData = await parseJsonSafe(response);
       if (!response.ok) {
-        throw new Error(resData.message || JSON.stringify(resData));
+        const errorMessage = resData && typeof resData === 'object'
+          ? resData.message || JSON.stringify(resData)
+          : resData || response.statusText;
+        throw new Error(errorMessage);
       }
       console.log('[EMAIL] Brevo API Response:', resData);
     } else if (process.env.RESEND_API_KEY && process.env.EMAIL_FROM) {
@@ -303,9 +316,12 @@ exports.forgotPassword = async (req, res) => {
         })
       });
 
-      const resData = await response.json();
+      const resData = await parseJsonSafe(response);
       if (!response.ok) {
-        throw new Error(resData.message || JSON.stringify(resData));
+        const errorMessage = resData && typeof resData === 'object'
+          ? resData.message || JSON.stringify(resData)
+          : resData || response.statusText;
+        throw new Error(errorMessage);
       }
       console.log('[EMAIL] Resend API Response:', resData);
     } else if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
